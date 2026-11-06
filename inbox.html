@@ -132,7 +132,7 @@ dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-w
     <label for="nKind">Agent</label>
     <select id="nKind"></select>
     <div style="display:flex;gap:8px">
-      <div style="flex:1"><label for="nModel">Model</label><input id="nModel" list="nModels" placeholder="default"><datalist id="nModels"></datalist></div>
+      <div style="flex:1"><label for="nModel">Model</label><select id="nModel"></select><input id="nModelOther" placeholder="model name" hidden style="margin-top:6px"></div>
       <div style="flex:1"><label for="nEffort">Effort</label><select id="nEffort"></select></div>
       <div style="flex:1"><label for="nMode">Mode</label><select id="nMode"></select></div>
     </div>
@@ -152,7 +152,7 @@ dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-w
     <h2>Model settings</h2>
     <p class="meta" id="setNow"></p>
     <div style="display:flex;gap:8px">
-      <div style="flex:1"><label for="sModel">Model</label><input id="sModel" list="sModels" placeholder="default"><datalist id="sModels"></datalist></div>
+      <div style="flex:1"><label for="sModel">Model</label><select id="sModel"></select><input id="sModelOther" placeholder="model name" hidden style="margin-top:6px"></div>
       <div style="flex:1"><label for="sEffort">Effort</label><select id="sEffort"></select></div>
     </div>
     <p class="meta">Applying restarts the agent on the same conversation with these settings, for this
@@ -609,19 +609,32 @@ $("#termSend").onclick = async () => {
   try { await api("herdr", {thread: sel, op: "prompt", text}); $("#termText").value = ""; setTimeout(termRead, 800); }
   catch (e) { $("#termErr").textContent = e.message; }
 };
-// Fill a model field's suggestions and an effort menu with the choices for an agent kind.
-function fillChoices(kind, modelList, effortSel) {
+// Fill the model and effort menus with the choices for an agent kind. Codex takes any model
+// name, so its menu ends with "Other…", which shows a text field for one.
+function fillChoices(kind, modelSel, other, effortSel) {
   const c = (state.choices || {})[kind] || {models: [], efforts: []};
-  modelList.replaceChildren(...c.models.map(m => el("option", {value: m})));
+  modelSel.replaceChildren(el("option", {value: ""}, "default"), ...c.models.map(m => el("option", {value: m}, m)),
+    kind === "codex" ? el("option", {value: "\u0000other"}, "Other…") : null);
+  modelSel.onchange = () => { other.hidden = modelSel.value !== "\u0000other"; if (!other.hidden) other.focus(); };
+  other.value = ""; other.hidden = true;
   effortSel.replaceChildren(el("option", {value: ""}, "default"), ...c.efforts.map(m => el("option", {value: m}, m)));
   return c;
 }
+// Show a model in a menu filled by fillChoices, typing it into "Other…" if it isn't listed.
+function setModel(modelSel, other, model) {
+  const listed = [...modelSel.options].some(o => o.value === model);
+  if (listed || !model || ![...modelSel.options].some(o => o.value === "\u0000other")) {
+    modelSel.value = listed ? model : ""; return;
+  }
+  modelSel.value = "\u0000other"; other.value = model; other.hidden = false;
+}
+const modelValue = (modelSel, other) => modelSel.value === "\u0000other" ? other.value.trim() : modelSel.value;
 
 function openSettings() {
   const t = thread(), u = t.usage || {}, kind = t.agent_kind || "claude";
-  const c = fillChoices(kind, $("#sModels"), $("#sEffort"));
+  const c = fillChoices(kind, $("#sModel"), $("#sModelOther"), $("#sEffort"));
   const id = (u.model_id || "").toLowerCase();
-  $("#sModel").value = kind === "claude" ? (c.models.find(m => id.includes(m)) || "") : (u.model || "");
+  setModel($("#sModel"), $("#sModelOther"), kind === "claude" ? (c.models.find(m => id.includes(m)) || "") : (u.model || ""));
   $("#sEffort").value = c.efforts.includes(u.effort) ? u.effort : "";
   $("#setNow").textContent = u.model ? `Now: ${usageText(u)}` : "Current settings unknown until its status line reports.";
   $("#sErr").textContent = "";
@@ -632,7 +645,7 @@ $("#setForm").addEventListener("submit", async e => {
   e.preventDefault();
   $("#sGo").disabled = true; $("#sErr").textContent = "";
   try {
-    await api("herdr", {thread: sel, op: "settings", model: $("#sModel").value, effort: $("#sEffort").value});
+    await api("herdr", {thread: sel, op: "settings", model: modelValue($("#sModel"), $("#sModelOther")), effort: $("#sEffort").value});
     $("#setDlg").close(); await refresh();
   } catch (err) { $("#sErr").textContent = err.message; }
   $("#sGo").disabled = false;
@@ -653,7 +666,7 @@ async function closeAgent() {
 $("#newBtn").onclick = () => {
   $("#nKind").replaceChildren(...state.kinds.map(k => el("option", {value: k}, k)));
   const kindChoices = () => {
-    $("#nModel").value = ""; fillChoices($("#nKind").value, $("#nModels"), $("#nEffort"));
+    fillChoices($("#nKind").value, $("#nModel"), $("#nModelOther"), $("#nEffort"));
     $("#nMode").replaceChildren(el("option", {value: ""}, "default"),
       ...((state.modes || {})[$("#nKind").value] || []).map(m => el("option", {value: m.id}, m.label)));
   };
@@ -666,7 +679,7 @@ $("#newForm").addEventListener("submit", async e => {
   e.preventDefault();
   $("#nGo").disabled = true; $("#nErr").textContent = "";
   try {
-    const r = await api("start", {cwd: $("#nCwd").value, kind: $("#nKind").value, model: $("#nModel").value, effort: $("#nEffort").value, mode: $("#nMode").value, trust: $("#nTrust").checked, title: $("#nTitle").value, task: $("#nTask").value});
+    const r = await api("start", {cwd: $("#nCwd").value, kind: $("#nKind").value, model: modelValue($("#nModel"), $("#nModelOther")), effort: $("#nEffort").value, mode: $("#nMode").value, trust: $("#nTrust").checked, title: $("#nTitle").value, task: $("#nTask").value});
     $("#newDlg").close(); $("#nTask").value = ""; $("#nTitle").value = "";
     select(r.thread);
   } catch (err) { $("#nErr").textContent = err.message; }
