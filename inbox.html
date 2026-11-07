@@ -247,6 +247,19 @@ function toggleUsageMode() {
   renderList();
 }
 
+// Text typed into a thread's boxes survives leaving or reloading the page: each box keeps
+// its draft in this browser, under its thread and question, until it's sent.
+const draftKey = (...parts) => ["dawg.draft", ...parts].join(".");
+function loadDraft(key) { try { return localStorage.getItem(key) || ""; } catch (e) { return ""; } }
+function saveDraft(key, text) {
+  try { text.trim() ? localStorage.setItem(key, text) : localStorage.removeItem(key); } catch (e) {}
+}
+function keepDraft(node, key) {
+  node.value = loadDraft(key);
+  node.addEventListener("input", () => saveDraft(key, node.value));
+  return node;
+}
+
 function usageRows(service) {
   const u = (state.services || {})[service], levels = state.alert_levels || [];
   if (!u) return [];
@@ -345,6 +358,8 @@ function renderThread() {
                         onkeydown: e => { if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer:coarse)").matches) { e.preventDefault(); sendDraft(); } },
                         oninput: e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}),
         el("button", {class: "primary", onclick: sendDraft}, "Send")));
+    const draft = keepDraft($("#draft"), draftKey(t.id, "msg"));
+    if (draft.value) draft.style.height = draft.scrollHeight + "px";
   }
   renderHead(t);
   const box = $("#msgs");
@@ -505,19 +520,20 @@ function renderPrompt(x, t) {
   }
   if (x.open) {
     const takesText = x.options.filter(o => o.text);
-    const ta = takesText.length ? el("textarea", {rows: 2, placeholder: `For “${takesText[0].label}”`}) : null;
+    const key = draftKey(t.id, "prompt", x.pid);
+    const ta = takesText.length ? keepDraft(el("textarea", {rows: 2, placeholder: `For “${takesText[0].label}”`}), key) : null;
     const pick = async o => {
       const text = o.text ? ta.value.trim() : "";
       if (o.text && !text) { err.textContent = "Write your message first, then tap it again."; ta.focus(); return; }
       err.textContent = "";
       card.querySelectorAll("button").forEach(b => b.disabled = true);
-      try { await api("choose", {thread: t.id, pid: x.pid, n: o.n, text}); await refresh(); }
+      try { await api("choose", {thread: t.id, pid: x.pid, n: o.n, text}); saveDraft(key, ""); await refresh(); }
       catch (e) { err.textContent = e.message; card.querySelectorAll("button").forEach(b => b.disabled = false); }
     };
     card.append(el("div", {class: "opts"}, x.options.map(o =>
       el("button", {onclick: () => pick(o)}, `${o.n}. ${o.label}`, o.desc ? el("small", {}, o.desc) : null))));
     if (ta) card.append(ta);
-  }
+  } else saveDraft(draftKey(t.id, "prompt", x.pid), "");
   card.append(err);
   const answered = (state.entries || []).some(y => y.kind === "answer" && y.rid === x.pid);
   const status = answered ? "answered" : x.open ? "waiting in the terminal" : "closed in the terminal";
@@ -528,12 +544,14 @@ function renderPrompt(x, t) {
 function renderAsk(x, t) {
   const card = el("div", {class: "msg agent ask", "data-rid": x.rid});
   const multi = x.questions.length > 1;
+  const keys = x.questions.map((q, i) => draftKey(t.id, "ask", x.rid, i));
   const picks = x.questions.map(() => ({option: "", text: ""}));
+  if (!x.open) keys.forEach(k => saveDraft(k, ""));
   const err = el("div", {class: "err"});
   const submit = async (answers) => {
     err.textContent = "";
     card.querySelectorAll("button").forEach(b => b.disabled = true);
-    try { await api("answer", {thread: t.id, rid: x.rid, answers}); await refresh(); }
+    try { await api("answer", {thread: t.id, rid: x.rid, answers}); keys.forEach(k => saveDraft(k, "")); await refresh(); }
     catch (e) { err.textContent = e.message; card.querySelectorAll("button").forEach(b => b.disabled = false); }
   };
   x.questions.forEach((q, i) => {
@@ -551,8 +569,10 @@ function renderAsk(x, t) {
       }
       if (q.options.length) qn.append(opts);
       if (x.allow_text) {
-        qn.append(el("textarea", {rows: 2, placeholder: q.options.length ? "Note, or your own instruction" : "Reply",
-                                  oninput: e => { picks[i].text = e.target.value; }}));
+        const ta = keepDraft(el("textarea", {rows: 2, placeholder: q.options.length ? "Note, or your own instruction" : "Reply",
+                                             oninput: e => { picks[i].text = e.target.value; }}), keys[i]);
+        picks[i].text = ta.value;
+        qn.append(ta);
         if (!multi) qn.append(el("div", {class: "row"},
           el("button", {class: "primary", onclick: () => picks[0].text.trim() ? submit([{option: "message", text: picks[0].text}]) : (err.textContent = "Write a message first.")},
              q.options.length ? "Do this instead" : "Send")));
@@ -574,8 +594,9 @@ async function sendDraft() {
   const ta = $("#draft");
   const text = ta.value.trim();
   if (!text) return;
+  const tid = sel;
   ta.disabled = true;
-  try { await api("send", {thread: sel, text}); ta.value = ""; ta.style.height = "auto"; await refresh(); }
+  try { await api("send", {thread: tid, text}); saveDraft(draftKey(tid, "msg"), ""); ta.value = ""; ta.style.height = "auto"; await refresh(); }
   catch (e) { $("#hint").textContent = e.message; }
   ta.disabled = false; ta.focus();
 }
@@ -597,16 +618,18 @@ function openTerm() {
     try { await api("herdr", {thread: sel, op: "keys", key: k}); setTimeout(termRead, 400); }
     catch (e) { $("#termErr").textContent = e.message; }
   }}, k)));
+  $("#termText").value = loadDraft(draftKey(sel, "term"));
   $("#termOut").textContent = "…";
   $("#termDlg").showModal();
   termRead();
 }
 $("#termRefresh").onclick = termRead;
 $("#termClose").onclick = () => $("#termDlg").close();
+$("#termText").oninput = () => saveDraft(draftKey(sel, "term"), $("#termText").value);
 $("#termSend").onclick = async () => {
   const text = $("#termText").value.trim();
   if (!text) return;
-  try { await api("herdr", {thread: sel, op: "prompt", text}); $("#termText").value = ""; setTimeout(termRead, 800); }
+  try { await api("herdr", {thread: sel, op: "prompt", text}); saveDraft(draftKey(sel, "term"), ""); $("#termText").value = ""; setTimeout(termRead, 800); }
   catch (e) { $("#termErr").textContent = e.message; }
 };
 // Fill the model and effort menus with the choices for an agent kind. Codex takes any model
