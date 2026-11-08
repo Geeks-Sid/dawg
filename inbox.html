@@ -53,9 +53,15 @@ body{display:flex;flex-direction:column;height:100dvh}
 .foot{padding:10px 14px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);display:flex;gap:12px}
 .foot a{color:var(--muted)}
 .main{flex:1;display:flex;flex-direction:column;min-width:0}
-.thead{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--card);flex-wrap:wrap}
-.thead .name{flex:1;min-width:140px} .thead .name b{display:block;font-size:16px}
-.thead .name small{color:var(--muted)}
+.thead{display:flex;flex-direction:column;gap:6px;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--card)}
+.thead .top{display:flex;align-items:center;gap:8px;min-width:0}
+.thead .name{flex:1;min-width:0} .thead .name b{display:block;font-size:16px}
+.thead .name b,.thead .name small,.thead .state span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.thead .name small{display:block;color:var(--muted)}
+.thead .state{flex:0 1 auto;min-width:0;max-width:55%}
+.thead .tools{display:flex;align-items:center;gap:6px;overflow-x:auto;scrollbar-width:none;min-width:0}
+.thead .tools::-webkit-scrollbar{display:none}
+.thead .tools>*{flex:none} .thead .tools button{padding:5px 10px;font-size:13px}
 .pill{display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:2px 9px;border-radius:12px;background:var(--bubble)}
 .pill .dot{margin:0;width:8px;height:8px}
 .msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:8px}
@@ -108,6 +114,11 @@ dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-w
   .side{width:100%;border-right:0} .main{display:none}
   .app.open .side{display:none} .app.open .main{display:flex}
   .back{display:inline-block}
+}
+@media (max-height:500px){
+  .thead{flex-direction:row;align-items:center;gap:8px;padding:5px 14px}
+  .thead .top{flex:0 1 auto;max-width:50%} .thead .name small{display:none} .thead .name b{font-size:15px}
+  .thead .tools{flex:1}
 }
 </style>
 </head>
@@ -399,7 +410,7 @@ function modeControl(t) {
       e.target.disabled = true;
       try { await api("herdr", {thread: t.id, op: "mode", mode: e.target.value}); }
       catch (err) { alert(err.message); }
-      e.target.blur(); refresh();
+      e.target.blur(); $("#thead").dataset.key = ""; refresh();
     }},
     t.mode ? null : el("option", {value: "", selected: true, disabled: true}, "Mode"),
     t.mode && !known ? el("option", {value: t.mode, selected: true}, `${t.mode_label || t.mode} mode`) : null,
@@ -413,10 +424,22 @@ function renderHead(t) {
   const h = t.herdr;
   const live = h ? (h.live || (h.workspace ? "gone" : "starting")) : null;
   const btn = (label, fn, title) => el("button", {onclick: fn, title}, label);
-  $("#thead").replaceChildren(...[
+  // Rebuilding on every poll would snap the controls row back to its start while it's being
+  // swiped, so rebuild only when something shown changed, and keep the row's scroll position.
+  const head = $("#thead");
+  const key = JSON.stringify([t.id, t.title, t.cwd, statusText(t), t.state, usageText(t.usage), t.mode, t.mode_label,
+                              t.agent_kind, h, t.muted, t.archived, scoped, (state.modes || {})[t.agent_kind]]);
+  if (head.dataset.key === key) return;
+  const sameThread = head.dataset.thread === t.id;
+  const scrollX = sameThread && head.querySelector(".tools") ? head.querySelector(".tools").scrollLeft : 0;
+  head.dataset.key = key; head.dataset.thread = t.id;
+  // Same layout for every thread: name and status on top, then one row of controls that
+  // scrolls sideways instead of wrapping. A short (landscape phone) screen fits both on one line.
+  head.replaceChildren(el("div", {class: "top"},
     el("button", {class: "back", onclick: () => select("")}, "‹"),
     el("div", {class: "name"}, el("b", {}, t.title), el("small", {}, t.cwd || "")),
-    el("span", {class: "pill"}, el("span", {class: `dot ${t.state}`}), statusText(t)),
+    el("span", {class: "pill state", title: statusText(t)}, el("span", {class: `dot ${t.state}`}), el("span", {}, statusText(t)))),
+  el("div", {class: "tools"}, ...[
     usageText(t.usage) ? el("span", {class: "pill", title: "model · effort · context used · session cost"}, usageText(t.usage)) : null,
     h && h.live && !scoped && ["claude", "codex"].includes(t.agent_kind) ? modeControl(t) : null,
     h ? el("span", {class: "pill", title: `herdr agent ${h.agent}`}, `herdr: ${live}`) : null,
@@ -427,7 +450,8 @@ function renderHead(t) {
         "Turn phone texts for this thread on or off; the inbox still updates"),
     btn(t.archived ? "Unarchive" : "Archive", () => api("thread", {thread: t.id, archived: !t.archived}).then(refresh)),
     h && h.workspace && h.live && !scoped && !h.adopted ? btn("Close", closeAgent, "Close the agent's herdr workspace") : null,
-  ].filter(Boolean));
+  ].filter(Boolean)));
+  head.querySelector(".tools").scrollLeft = scrollX;
 }
 
 function renderEntry(x, t) {
