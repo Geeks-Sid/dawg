@@ -97,7 +97,10 @@ that isn't signed in, a link shows just its thread.
 directory you pick, with your task. Its thread is set through `DAWG_THREAD`,
 and it goes straight into away mode. For those agents the thread also shows
 herdr's view of the agent, a **Terminal** to read its screen and press keys
-(for permission prompts), and **Close** to end its workspace.
+(for permission prompts), and **Close** to end its workspace. While the
+agent is working, **Stop** by the message box interrupts its current task,
+as Esc does in its terminal: it keeps its context and waits for your next
+message, and any messages you've queued are typed in once it's idle.
 
 **Mode** shows a Claude or Codex agent's mode as its terminal footer shows
 it, and switches it: Auto, Manual, Accept edits or Plan for Claude, Default

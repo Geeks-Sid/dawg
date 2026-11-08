@@ -1729,6 +1729,18 @@ class Handler(BaseHTTPRequestHandler):
                 post(meta["id"], {"kind": "system", "from": "system",
                                   "body": f"Switched to {MODES[kind][mode]} mode."})
                 return self.send_json({"ok": True})
+            if op == "stop":
+                # Esc interrupts the turn in both Claude Code and Codex; the session and its
+                # context stay, and queued messages are typed in once it's idle.
+                live = herdr_agents(settings).get(herdr_target(meta))
+                if not live or live["agent_status"] != "working":
+                    return self.send_json({"error": "The agent isn't working on anything."}, 409)
+                herdr(settings, "agent", "send-keys", herdr_target(meta), "esc", timeout=10)
+                herdr_cache["at"] = 0
+                post(meta["id"], {"kind": "system", "from": "system",
+                                  "body": "Stopped the agent's current task."},
+                     lambda m: m.update(status="idle"))
+                return self.send_json({"ok": True})
             if op == "clear":
                 if thread_agent(meta).get("kind") not in AGENT_KINDS:
                     return self.send_json({"error": "Only Claude and Codex agents can be cleared."}, 400)

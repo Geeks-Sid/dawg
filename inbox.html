@@ -96,6 +96,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--bg);padding:8px;
 .ok{color:var(--ok)} .bad{color:var(--bad)}
 .compose{display:flex;gap:8px;padding:10px 14px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--card);align-items:flex-end}
 .compose textarea{min-height:40px;max-height:160px;resize:none}
+.compose .stop{color:var(--bad);white-space:nowrap}
 .hint{font-size:12px;color:var(--muted);padding:0 14px 6px;background:var(--card)}
 .empty{margin:auto;color:var(--muted);text-align:center;padding:20px}
 .err{color:var(--bad);font-size:13px}
@@ -368,11 +369,15 @@ function renderThread() {
         el("textarea", {id: "draft", rows: 1, placeholder: "Message",
                         onkeydown: e => { if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer:coarse)").matches) { e.preventDefault(); sendDraft(); } },
                         oninput: e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}),
+        el("button", {id: "stopBtn", class: "stop", hidden: true, onclick: stopAgent,
+                      title: "Stop what the agent is doing, like pressing Esc in its terminal"}, "■ Stop"),
         el("button", {class: "primary", onclick: sendDraft}, "Send")));
     const draft = keepDraft($("#draft"), draftKey(t.id, "msg"));
     if (draft.value) draft.style.height = draft.scrollHeight + "px";
   }
   renderHead(t);
+  // Stop shows only while herdr sees the agent working on something.
+  $("#stopBtn").hidden = !(t.herdr && t.herdr.live === "working" && !scoped);
   const box = $("#msgs");
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
   let added = false;
@@ -701,6 +706,12 @@ $("#setForm").addEventListener("submit", async e => {
 async function clearAgent() {
   if (!confirm("Clear this agent's context? It starts over in a new session, as with /clear, and stops its background commands. The messages stay here.")) return;
   try { await api("herdr", {thread: sel, op: "clear"}); await refresh(); }
+  catch (e) { alert(e.message); }
+}
+
+async function stopAgent() {
+  if (!confirm("Stop what this agent is doing? It keeps its context and waits for your next message; any you've queued are typed in.")) return;
+  try { await api("herdr", {thread: sel, op: "stop"}); await refresh(); }
   catch (e) { alert(e.message); }
 }
 
