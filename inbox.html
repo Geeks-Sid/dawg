@@ -53,9 +53,15 @@ body{display:flex;flex-direction:column;height:100dvh}
 .foot{padding:10px 14px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);display:flex;gap:12px}
 .foot a{color:var(--muted)}
 .main{flex:1;display:flex;flex-direction:column;min-width:0}
-.thead{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--card);flex-wrap:wrap}
-.thead .name{flex:1;min-width:140px} .thead .name b{display:block;font-size:16px}
-.thead .name small{color:var(--muted)}
+.thead{display:flex;flex-direction:column;gap:6px;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--card)}
+.thead .top{display:flex;align-items:center;gap:8px;min-width:0}
+.thead .name{flex:1;min-width:0} .thead .name b{display:block;font-size:16px}
+.thead .name b,.thead .name small,.thead .state span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.thead .name small{display:block;color:var(--muted)}
+.thead .state{flex:0 1 auto;min-width:0;max-width:55%}
+.thead .tools{display:flex;align-items:center;gap:6px;overflow-x:auto;scrollbar-width:none;min-width:0}
+.thead .tools::-webkit-scrollbar{display:none}
+.thead .tools>*{flex:none} .thead .tools button{padding:5px 10px;font-size:13px}
 .pill{display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:2px 9px;border-radius:12px;background:var(--bubble)}
 .pill .dot{margin:0;width:8px;height:8px}
 .msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:8px}
@@ -90,6 +96,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--bg);padding:8px;
 .ok{color:var(--ok)} .bad{color:var(--bad)}
 .compose{display:flex;gap:8px;padding:10px 14px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--card);align-items:flex-end}
 .compose textarea{min-height:40px;max-height:160px;resize:none}
+.compose .stop{color:var(--bad);white-space:nowrap}
 .hint{font-size:12px;color:var(--muted);padding:0 14px 6px;background:var(--card)}
 .empty{margin:auto;color:var(--muted);text-align:center;padding:20px}
 .err{color:var(--bad);font-size:13px}
@@ -108,6 +115,11 @@ dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-w
   .side{width:100%;border-right:0} .main{display:none}
   .app.open .side{display:none} .app.open .main{display:flex}
   .back{display:inline-block}
+}
+@media (max-height:500px){
+  .thead{flex-direction:row;align-items:center;gap:8px;padding:5px 14px}
+  .thead .top{flex:0 1 auto;max-width:50%} .thead .name small{display:none} .thead .name b{font-size:15px}
+  .thead .tools{flex:1}
 }
 </style>
 </head>
@@ -132,7 +144,7 @@ dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-w
     <label for="nKind">Agent</label>
     <select id="nKind"></select>
     <div style="display:flex;gap:8px">
-      <div style="flex:1"><label for="nModel">Model</label><input id="nModel" list="nModels" placeholder="default"><datalist id="nModels"></datalist></div>
+      <div style="flex:1"><label for="nModel">Model</label><select id="nModel"></select><input id="nModelOther" placeholder="model name" hidden style="margin-top:6px"></div>
       <div style="flex:1"><label for="nEffort">Effort</label><select id="nEffort"></select></div>
       <div style="flex:1"><label for="nMode">Mode</label><select id="nMode"></select></div>
     </div>
@@ -152,7 +164,7 @@ dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-w
     <h2>Model settings</h2>
     <p class="meta" id="setNow"></p>
     <div style="display:flex;gap:8px">
-      <div style="flex:1"><label for="sModel">Model</label><input id="sModel" list="sModels" placeholder="default"><datalist id="sModels"></datalist></div>
+      <div style="flex:1"><label for="sModel">Model</label><select id="sModel"></select><input id="sModelOther" placeholder="model name" hidden style="margin-top:6px"></div>
       <div style="flex:1"><label for="sEffort">Effort</label><select id="sEffort"></select></div>
     </div>
     <p class="meta">Applying restarts the agent on the same conversation with these settings, for this
@@ -245,6 +257,19 @@ function toggleUsageMode() {
   usageMode = usageMode === "used" ? "left" : "used";
   try { localStorage.setItem("dawg.usageMode", usageMode); } catch (e) {}
   renderList();
+}
+
+// Text typed into a thread's boxes survives leaving or reloading the page: each box keeps
+// its draft in this browser, under its thread and question, until it's sent.
+const draftKey = (...parts) => ["dawg.draft", ...parts].join(".");
+function loadDraft(key) { try { return localStorage.getItem(key) || ""; } catch (e) { return ""; } }
+function saveDraft(key, text) {
+  try { text.trim() ? localStorage.setItem(key, text) : localStorage.removeItem(key); } catch (e) {}
+}
+function keepDraft(node, key) {
+  node.value = loadDraft(key);
+  node.addEventListener("input", () => saveDraft(key, node.value));
+  return node;
 }
 
 function usageRows(service) {
@@ -344,9 +369,15 @@ function renderThread() {
         el("textarea", {id: "draft", rows: 1, placeholder: "Message",
                         onkeydown: e => { if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer:coarse)").matches) { e.preventDefault(); sendDraft(); } },
                         oninput: e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}),
+        el("button", {id: "stopBtn", class: "stop", hidden: true, onclick: stopAgent,
+                      title: "Stop what the agent is doing, like pressing Esc in its terminal"}, "■ Stop"),
         el("button", {class: "primary", onclick: sendDraft}, "Send")));
+    const draft = keepDraft($("#draft"), draftKey(t.id, "msg"));
+    if (draft.value) draft.style.height = draft.scrollHeight + "px";
   }
   renderHead(t);
+  // Stop shows only while herdr sees the agent working on something.
+  $("#stopBtn").hidden = !(t.herdr && t.herdr.live === "working" && !scoped);
   const box = $("#msgs");
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
   let added = false;
@@ -384,7 +415,7 @@ function modeControl(t) {
       e.target.disabled = true;
       try { await api("herdr", {thread: t.id, op: "mode", mode: e.target.value}); }
       catch (err) { alert(err.message); }
-      e.target.blur(); refresh();
+      e.target.blur(); $("#thead").dataset.key = ""; refresh();
     }},
     t.mode ? null : el("option", {value: "", selected: true, disabled: true}, "Mode"),
     t.mode && !known ? el("option", {value: t.mode, selected: true}, `${t.mode_label || t.mode} mode`) : null,
@@ -398,10 +429,22 @@ function renderHead(t) {
   const h = t.herdr;
   const live = h ? (h.live || (h.workspace ? "gone" : "starting")) : null;
   const btn = (label, fn, title) => el("button", {onclick: fn, title}, label);
-  $("#thead").replaceChildren(...[
+  // Rebuilding on every poll would snap the controls row back to its start while it's being
+  // swiped, so rebuild only when something shown changed, and keep the row's scroll position.
+  const head = $("#thead");
+  const key = JSON.stringify([t.id, t.title, t.cwd, statusText(t), t.state, usageText(t.usage), t.mode, t.mode_label,
+                              t.agent_kind, h, t.muted, t.archived, scoped, (state.modes || {})[t.agent_kind]]);
+  if (head.dataset.key === key) return;
+  const sameThread = head.dataset.thread === t.id;
+  const scrollX = sameThread && head.querySelector(".tools") ? head.querySelector(".tools").scrollLeft : 0;
+  head.dataset.key = key; head.dataset.thread = t.id;
+  // Same layout for every thread: name and status on top, then one row of controls that
+  // scrolls sideways instead of wrapping. A short (landscape phone) screen fits both on one line.
+  head.replaceChildren(el("div", {class: "top"},
     el("button", {class: "back", onclick: () => select("")}, "‹"),
     el("div", {class: "name"}, el("b", {}, t.title), el("small", {}, t.cwd || "")),
-    el("span", {class: "pill"}, el("span", {class: `dot ${t.state}`}), statusText(t)),
+    el("span", {class: "pill state", title: statusText(t)}, el("span", {class: `dot ${t.state}`}), el("span", {}, statusText(t)))),
+  el("div", {class: "tools"}, ...[
     usageText(t.usage) ? el("span", {class: "pill", title: "model · effort · context used · session cost"}, usageText(t.usage)) : null,
     h && h.live && !scoped && ["claude", "codex"].includes(t.agent_kind) ? modeControl(t) : null,
     h ? el("span", {class: "pill", title: `herdr agent ${h.agent}`}, `herdr: ${live}`) : null,
@@ -412,7 +455,8 @@ function renderHead(t) {
         "Turn phone texts for this thread on or off; the inbox still updates"),
     btn(t.archived ? "Unarchive" : "Archive", () => api("thread", {thread: t.id, archived: !t.archived}).then(refresh)),
     h && h.workspace && h.live && !scoped && !h.adopted ? btn("Close", closeAgent, "Close the agent's herdr workspace") : null,
-  ].filter(Boolean));
+  ].filter(Boolean)));
+  head.querySelector(".tools").scrollLeft = scrollX;
 }
 
 function renderEntry(x, t) {
@@ -505,19 +549,20 @@ function renderPrompt(x, t) {
   }
   if (x.open) {
     const takesText = x.options.filter(o => o.text);
-    const ta = takesText.length ? el("textarea", {rows: 2, placeholder: `For “${takesText[0].label}”`}) : null;
+    const key = draftKey(t.id, "prompt", x.pid);
+    const ta = takesText.length ? keepDraft(el("textarea", {rows: 2, placeholder: `For “${takesText[0].label}”`}), key) : null;
     const pick = async o => {
       const text = o.text ? ta.value.trim() : "";
       if (o.text && !text) { err.textContent = "Write your message first, then tap it again."; ta.focus(); return; }
       err.textContent = "";
       card.querySelectorAll("button").forEach(b => b.disabled = true);
-      try { await api("choose", {thread: t.id, pid: x.pid, n: o.n, text}); await refresh(); }
+      try { await api("choose", {thread: t.id, pid: x.pid, n: o.n, text}); saveDraft(key, ""); await refresh(); }
       catch (e) { err.textContent = e.message; card.querySelectorAll("button").forEach(b => b.disabled = false); }
     };
     card.append(el("div", {class: "opts"}, x.options.map(o =>
       el("button", {onclick: () => pick(o)}, `${o.n}. ${o.label}`, o.desc ? el("small", {}, o.desc) : null))));
     if (ta) card.append(ta);
-  }
+  } else saveDraft(draftKey(t.id, "prompt", x.pid), "");
   card.append(err);
   const answered = (state.entries || []).some(y => y.kind === "answer" && y.rid === x.pid);
   const status = answered ? "answered" : x.open ? "waiting in the terminal" : "closed in the terminal";
@@ -528,12 +573,14 @@ function renderPrompt(x, t) {
 function renderAsk(x, t) {
   const card = el("div", {class: "msg agent ask", "data-rid": x.rid});
   const multi = x.questions.length > 1;
+  const keys = x.questions.map((q, i) => draftKey(t.id, "ask", x.rid, i));
   const picks = x.questions.map(() => ({option: "", text: ""}));
+  if (!x.open) keys.forEach(k => saveDraft(k, ""));
   const err = el("div", {class: "err"});
   const submit = async (answers) => {
     err.textContent = "";
     card.querySelectorAll("button").forEach(b => b.disabled = true);
-    try { await api("answer", {thread: t.id, rid: x.rid, answers}); await refresh(); }
+    try { await api("answer", {thread: t.id, rid: x.rid, answers}); keys.forEach(k => saveDraft(k, "")); await refresh(); }
     catch (e) { err.textContent = e.message; card.querySelectorAll("button").forEach(b => b.disabled = false); }
   };
   x.questions.forEach((q, i) => {
@@ -551,8 +598,10 @@ function renderAsk(x, t) {
       }
       if (q.options.length) qn.append(opts);
       if (x.allow_text) {
-        qn.append(el("textarea", {rows: 2, placeholder: q.options.length ? "Note, or your own instruction" : "Reply",
-                                  oninput: e => { picks[i].text = e.target.value; }}));
+        const ta = keepDraft(el("textarea", {rows: 2, placeholder: q.options.length ? "Note, or your own instruction" : "Reply",
+                                             oninput: e => { picks[i].text = e.target.value; }}), keys[i]);
+        picks[i].text = ta.value;
+        qn.append(ta);
         if (!multi) qn.append(el("div", {class: "row"},
           el("button", {class: "primary", onclick: () => picks[0].text.trim() ? submit([{option: "message", text: picks[0].text}]) : (err.textContent = "Write a message first.")},
              q.options.length ? "Do this instead" : "Send")));
@@ -574,8 +623,9 @@ async function sendDraft() {
   const ta = $("#draft");
   const text = ta.value.trim();
   if (!text) return;
+  const tid = sel;
   ta.disabled = true;
-  try { await api("send", {thread: sel, text}); ta.value = ""; ta.style.height = "auto"; await refresh(); }
+  try { await api("send", {thread: tid, text}); saveDraft(draftKey(tid, "msg"), ""); ta.value = ""; ta.style.height = "auto"; await refresh(); }
   catch (e) { $("#hint").textContent = e.message; }
   ta.disabled = false; ta.focus();
 }
@@ -597,31 +647,46 @@ function openTerm() {
     try { await api("herdr", {thread: sel, op: "keys", key: k}); setTimeout(termRead, 400); }
     catch (e) { $("#termErr").textContent = e.message; }
   }}, k)));
+  $("#termText").value = loadDraft(draftKey(sel, "term"));
   $("#termOut").textContent = "…";
   $("#termDlg").showModal();
   termRead();
 }
 $("#termRefresh").onclick = termRead;
 $("#termClose").onclick = () => $("#termDlg").close();
+$("#termText").oninput = () => saveDraft(draftKey(sel, "term"), $("#termText").value);
 $("#termSend").onclick = async () => {
   const text = $("#termText").value.trim();
   if (!text) return;
-  try { await api("herdr", {thread: sel, op: "prompt", text}); $("#termText").value = ""; setTimeout(termRead, 800); }
+  try { await api("herdr", {thread: sel, op: "prompt", text}); saveDraft(draftKey(sel, "term"), ""); $("#termText").value = ""; setTimeout(termRead, 800); }
   catch (e) { $("#termErr").textContent = e.message; }
 };
-// Fill a model field's suggestions and an effort menu with the choices for an agent kind.
-function fillChoices(kind, modelList, effortSel) {
+// Fill the model and effort menus with the choices for an agent kind. Codex takes any model
+// name, so its menu ends with "Other…", which shows a text field for one.
+function fillChoices(kind, modelSel, other, effortSel) {
   const c = (state.choices || {})[kind] || {models: [], efforts: []};
-  modelList.replaceChildren(...c.models.map(m => el("option", {value: m})));
+  modelSel.replaceChildren(el("option", {value: ""}, "default"), ...c.models.map(m => el("option", {value: m}, m)),
+    kind === "codex" ? el("option", {value: "\u0000other"}, "Other…") : null);
+  modelSel.onchange = () => { other.hidden = modelSel.value !== "\u0000other"; if (!other.hidden) other.focus(); };
+  other.value = ""; other.hidden = true;
   effortSel.replaceChildren(el("option", {value: ""}, "default"), ...c.efforts.map(m => el("option", {value: m}, m)));
   return c;
 }
+// Show a model in a menu filled by fillChoices, typing it into "Other…" if it isn't listed.
+function setModel(modelSel, other, model) {
+  const listed = [...modelSel.options].some(o => o.value === model);
+  if (listed || !model || ![...modelSel.options].some(o => o.value === "\u0000other")) {
+    modelSel.value = listed ? model : ""; return;
+  }
+  modelSel.value = "\u0000other"; other.value = model; other.hidden = false;
+}
+const modelValue = (modelSel, other) => modelSel.value === "\u0000other" ? other.value.trim() : modelSel.value;
 
 function openSettings() {
   const t = thread(), u = t.usage || {}, kind = t.agent_kind || "claude";
-  const c = fillChoices(kind, $("#sModels"), $("#sEffort"));
+  const c = fillChoices(kind, $("#sModel"), $("#sModelOther"), $("#sEffort"));
   const id = (u.model_id || "").toLowerCase();
-  $("#sModel").value = kind === "claude" ? (c.models.find(m => id.includes(m)) || "") : (u.model || "");
+  setModel($("#sModel"), $("#sModelOther"), kind === "claude" ? (c.models.find(m => id.includes(m)) || "") : (u.model || ""));
   $("#sEffort").value = c.efforts.includes(u.effort) ? u.effort : "";
   $("#setNow").textContent = u.model ? `Now: ${usageText(u)}` : "Current settings unknown until its status line reports.";
   $("#sErr").textContent = "";
@@ -632,7 +697,7 @@ $("#setForm").addEventListener("submit", async e => {
   e.preventDefault();
   $("#sGo").disabled = true; $("#sErr").textContent = "";
   try {
-    await api("herdr", {thread: sel, op: "settings", model: $("#sModel").value, effort: $("#sEffort").value});
+    await api("herdr", {thread: sel, op: "settings", model: modelValue($("#sModel"), $("#sModelOther")), effort: $("#sEffort").value});
     $("#setDlg").close(); await refresh();
   } catch (err) { $("#sErr").textContent = err.message; }
   $("#sGo").disabled = false;
@@ -641,6 +706,12 @@ $("#setForm").addEventListener("submit", async e => {
 async function clearAgent() {
   if (!confirm("Clear this agent's context? It starts over in a new session, as with /clear, and stops its background commands. The messages stay here.")) return;
   try { await api("herdr", {thread: sel, op: "clear"}); await refresh(); }
+  catch (e) { alert(e.message); }
+}
+
+async function stopAgent() {
+  if (!confirm("Stop what this agent is doing? It keeps its context and waits for your next message; any you've queued are typed in.")) return;
+  try { await api("herdr", {thread: sel, op: "stop"}); await refresh(); }
   catch (e) { alert(e.message); }
 }
 
@@ -653,7 +724,7 @@ async function closeAgent() {
 $("#newBtn").onclick = () => {
   $("#nKind").replaceChildren(...state.kinds.map(k => el("option", {value: k}, k)));
   const kindChoices = () => {
-    $("#nModel").value = ""; fillChoices($("#nKind").value, $("#nModels"), $("#nEffort"));
+    fillChoices($("#nKind").value, $("#nModel"), $("#nModelOther"), $("#nEffort"));
     $("#nMode").replaceChildren(el("option", {value: ""}, "default"),
       ...((state.modes || {})[$("#nKind").value] || []).map(m => el("option", {value: m.id}, m.label)));
   };
@@ -666,7 +737,7 @@ $("#newForm").addEventListener("submit", async e => {
   e.preventDefault();
   $("#nGo").disabled = true; $("#nErr").textContent = "";
   try {
-    const r = await api("start", {cwd: $("#nCwd").value, kind: $("#nKind").value, model: $("#nModel").value, effort: $("#nEffort").value, mode: $("#nMode").value, trust: $("#nTrust").checked, title: $("#nTitle").value, task: $("#nTask").value});
+    const r = await api("start", {cwd: $("#nCwd").value, kind: $("#nKind").value, model: modelValue($("#nModel"), $("#nModelOther")), effort: $("#nEffort").value, mode: $("#nMode").value, trust: $("#nTrust").checked, title: $("#nTitle").value, task: $("#nTask").value});
     $("#newDlg").close(); $("#nTask").value = ""; $("#nTitle").value = "";
     select(r.thread);
   } catch (err) { $("#nErr").textContent = err.message; }
