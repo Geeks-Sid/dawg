@@ -59,6 +59,8 @@ link() {  # link TARGET NAME: point NAME at TARGET, replacing an old symlink
 link "$repo/dawg" "$HOME/.local/bin/dawg"
 link "$repo/skill/dawg" "$HOME/.claude/skills/dawg"
 [[ -d "$HOME/.codex" ]] && link "$repo/skill/dawg" "$HOME/.codex/skills/dawg"
+# omp doesn't read ~/.claude/skills unless that provider is enabled, so link its own skills directory.
+[[ -d "$HOME/.omp/agent" ]] && link "$repo/skill/dawg" "$HOME/.omp/agent/skills/dawg"
 
 mkdir -p "$config"
 chmod 700 "$config"

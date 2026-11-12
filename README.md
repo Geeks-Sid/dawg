@@ -69,6 +69,24 @@ For a self-hosted ntfy server, put its base URL (without the topic) in
 `chmod 600 ~/.config/dawg/ntfy_token`. This is separate from the inbox's
 `token` file.
 
+#### Private ntfy server
+
+`docker-compose.yml` runs a private ntfy server so the topic name is not a
+secret: it requires a login, and listens only on this machine's Tailscale
+address. Docker restarts it after a reboot (on macOS, turn on "Start Docker
+Desktop when you sign in").
+
+```bash
+NTFY_BIND=$(tailscale ip -4) docker compose up -d
+docker exec -it ntfy ntfy user add --role=admin me   # asks for a password
+docker exec ntfy ntfy token add me                   # prints a tk_... token
+```
+
+Then run `./install.sh --provider ntfy` with any topic (say `dawg`), put
+`http://<tailscale-ip>:2586` in `~/.config/dawg/server` and the token in
+`~/.config/dawg/ntfy_token`. In the ntfy app, add the user under Settings →
+Manage users, then subscribe to the topic with "Use another server".
+
 The same commands work with either provider. With ntfy, `-g` adds a tag and
 `-u` sets the notification's click URL. To open reply pages from
 notifications, enable links with the [`tap` setting](#inbox).
@@ -136,7 +154,7 @@ pass through the selected push server. Opening your bookmark signs that browser
 in with a cookie, and from then on links open the full inbox. In a browser
 that isn't signed in, a link shows just its thread.
 
-**New agent** starts Claude Code or Codex in a new herdr workspace, in the
+**New agent** starts Claude Code, Codex or omp in a new herdr workspace, in the
 directory you pick, with your task. Its thread is set through `DAWG_THREAD`,
 and it goes straight into away mode. For those agents the thread also shows
 herdr's view of the agent, a **Terminal** to read its screen and press keys
@@ -144,6 +162,15 @@ herdr's view of the agent, a **Terminal** to read its screen and press keys
 agent is working, **Stop** by the message box interrupts its current task,
 as Esc does in its terminal: it keeps its context and waits for your next
 message, and any messages you've queued are typed in once it's idle.
+
+omp agents get the thread, messages typed in from the inbox, **Terminal**,
+**Stop**, **Close** and **Settings**. Mode, Clear, terminal menus mirrored into
+the thread and usage are Claude and Codex only, so an omp agent's own
+prompts (such as tool approvals) are answered in **Terminal**. `install.sh`
+links the skill into `~/.omp/agent/skills` when that directory exists, because
+omp doesn't read `~/.claude/skills` unless that provider is enabled. An omp
+session you start yourself in a herdr pane joins the inbox the first time it
+runs a dawg command.
 
 **Mode** shows a Claude or Codex agent's mode as its terminal footer shows
 it, and switches it: Auto, Manual, Accept edits or Plan for Claude, Default
@@ -176,7 +203,7 @@ terminal.
 
 ### Models and usage
 
-The inbox groups threads by service: Claude, Codex, a local model provider
+The inbox groups threads by service: Claude, Codex, OMP, a local model provider
 such as Ollama, or Other. Each Claude and Codex group shows that account's
 5-hour and weekly limits, as % used or % left (toggle it in the group);
 local models have no limits to show. Each thread shows its agent's model,
@@ -192,13 +219,16 @@ When a limit passes 80% or 95% you get a text, and a note in the
 Notifications thread. Set the levels with `usage_alerts = [80, 95]` in
 `dawgd.toml`.
 
-For a Claude or Codex agent running in herdr (started from the inbox, or
+For a Claude, Codex or omp agent running in herdr (started from the inbox, or
 started in a herdr pane and using its thread), **Settings** changes its
 model and effort. dawg restarts it on the same conversation (`claude
---resume` or `codex resume`) with the new settings, so the change applies
+--resume`, `codex resume` or `omp --resume`) with the new settings, so the change applies
 to that agent only and doesn't touch your defaults the way `/model` would.
 It stops whatever the agent was running in the background, closes its open
-questions, and tells it to re-ask. Agents in a plain terminal show their
+questions, and tells it to re-ask. For omp, effort is its thinking level, the
+model is any name `omp --model` accepts, "default" returns to what the session
+started with, and its session is known once it has run a dawg command. Agents
+in a plain terminal show their
 settings, but dawg can't type into their terminal to change them. **New
 agent** also takes a model and effort, and marks the folder trusted
 (unless you untick it) so the agent doesn't ask in its terminal. If a new
