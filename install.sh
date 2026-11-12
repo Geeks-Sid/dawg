@@ -40,6 +40,11 @@ case "$provider" in
   ntfy) key_name="ntfy topic (subscribe to the same topic in the ntfy app)" ;;
   *) echo "install.sh: unknown provider '$provider'; use bark or ntfy" >&2; exit 2 ;;
 esac
+# An old install has a key but no provider file: that key is for Bark.
+if [[ ! -e "$config/provider" && -s "$config/key" && "$provider" != "bark" ]]; then
+  echo "install.sh: $config/key exists without $config/provider, so it is a Bark key; write $config/provider and update $config/key to switch to $provider" >&2
+  exit 2
+fi
 
 link() {  # link TARGET NAME: point NAME at TARGET, replacing an old symlink
   mkdir -p "$(dirname "$2")"

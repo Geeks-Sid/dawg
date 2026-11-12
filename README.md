@@ -60,7 +60,8 @@ the name.** Pick an unguessable name and don't send secrets.
 For an existing Bark installation, change `~/.config/dawg/provider` to
 `ntfy` and replace `~/.config/dawg/key` with your topic. Remove or update any
 Bark-specific `DAWG_SERVER` or `server` override when switching. The installer
-never overwrites an existing provider or key.
+never overwrites an existing provider or key, and `--provider ntfy` refuses
+when a `key` exists without a `provider` file (an old Bark install).
 
 For a self-hosted ntfy server, put its base URL (without the topic) in
 `~/.config/dawg/server`. For a protected topic, put an ntfy access token in

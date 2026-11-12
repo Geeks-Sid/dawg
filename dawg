@@ -55,6 +55,10 @@ if [[ -z "$key" ]]; then
   echo "dawg: no $key_name; set DAWG_KEY or write it to ~/.config/dawg/key" >&2
   exit 2
 fi
+if [[ "$provider" == "ntfy" && ! "$key" =~ ^[A-Za-z0-9_-]{1,64}$ ]]; then
+  echo "dawg: invalid ntfy topic; use letters, numbers, _ and -, up to 64 characters" >&2
+  exit 2
+fi
 
 title="$(hostname)"
 group="" level="" sound="" url="" action="" thread="${DAWG_THREAD:-notifications}"
